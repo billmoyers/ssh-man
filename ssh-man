@@ -1,0 +1,85 @@
+#!/bin/bash
+
+keyfiles() {
+	find "$HOME/.ssh/" -name '*.pub' | sort | grep -v revoke | while read f; do echo -n "$f "; ssh-keygen -lf "$f"; done | grep "$PATTERN" | awk '{print $1}'
+}
+
+PATTERN="."
+if [[ "$1" != "" ]]; then
+	PATTERN="$1"
+fi
+
+KEYFILES=$(keyfiles)
+
+ssh_add=$(which ssh-add)
+
+active_keys() {
+	$ssh_add -l | grep '^[0-9]' | awk '{print $2}'
+}
+active_files() {
+	$ssh_add -l | grep '^[0-9]' | awk '{print $3}'
+}
+
+is_active() {
+	fng="$1"
+	N=$(active_keys | grep "^$fng\$" | wc -l)
+	if [[ "$N" == "0" ]]; then
+		return 1
+	else
+		return 0
+	fi
+}
+
+
+#List keys
+ACTIVE_IDX=""
+i="1"
+for key in $KEYFILES; do
+	#Check if this key is active.
+	THIS=$(ssh-keygen -lf "$key" | awk '{print $2}')
+	if is_active "$THIS"; then
+		echo -n "* $i. "
+		ACTIVE_IDX="$i $ACTIVE_IDX"
+	else
+		echo -n "  $i. "
+	fi
+	ssh-keygen -lf "$key"
+	i=$((i+1))
+done
+
+#If there are options, list them, otherwise just do the switch
+if [[ "$i" > '2' ]]; then
+	n=$((i-1))
+	i=""
+	while grep -vE '^[0-9]+$' <(echo "$i") >/dev/null; do
+		echo -n "Choose a key (1...$n): "
+		read i
+	done
+else
+	i='1'
+fi
+
+#Don't add a key that's already in
+if grep -E "\b$i\b" >/dev/null <(echo "$ACTIVE_IDX"); then
+	echo "That key is already active."
+	exit
+fi
+
+#Collect existing keys to remove
+REMOVE=$(
+	for key in $(active_files); do
+		echo "$key"
+	done
+)
+
+#Add the selected key
+$ssh_add $(
+	for key in $KEYFILES; do
+		echo "$key" | sed -e 's/\.pub$//'
+	done | head -n"$i" | tail -n1
+) || exit
+
+#Remove old keys
+for key in $REMOVE; do
+	$ssh_add -d "$key"
+done
