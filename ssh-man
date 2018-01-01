@@ -9,6 +9,18 @@ if [[ "$1" != "" ]]; then
 	PATTERN="$1"
 fi
 
+if [[ "$PATTERN" == "--ids" ]]; then
+	sa=$(ssh-add -l)
+	if [[ "$?" == "0" ]]; then
+		echo "$sa" | awk '{print $3}' | while read line; do
+			basename "$line"
+		done | sed -e 's/.*@//g' | sort | paste -sd "," -
+	else
+		echo '--'
+	fi
+	exit
+fi
+
 KEYFILES=$(keyfiles)
 
 ssh_add=$(which ssh-add)
